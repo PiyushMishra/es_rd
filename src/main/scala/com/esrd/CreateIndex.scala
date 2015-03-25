@@ -22,12 +22,20 @@ object CreateIndex extends App {
 
   val locationTypeMap = Map(0 -> "continent_id", 1 -> "country_id", 2 -> "metro_code_id", 3 -> "region_id", 4 -> "area_code_id", 5 -> "city_id", 6 -> "postal_code_id")
 
+  def queryForHumanLocations = {
+    client.prepareSearch("human_locations")
+      .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+      .setQuery(QueryBuilders.matchAllQuery()).setSize(300) // Query
+      .execute()
+      .actionGet();
+  }
+
   def queryForLocations(locationType: Int, id: Int) = {
     var results = Array[SearchHit]()
     var scrollResp = client.prepareSearch("locations").setQuery(QueryBuilders.matchQuery(locationTypeMap(locationType), id))
       .setSearchType(SearchType.SCAN)
       .setScroll(new TimeValue(60000))
-      .setSize(10).execute().actionGet();
+      .setSize(300).execute().actionGet();
 
     do {
       results = results ++ scrollResp.getHits.getHits
@@ -39,10 +47,9 @@ object CreateIndex extends App {
   var scrollResp = client.prepareSearch("human_locations")
     .setSearchType(SearchType.SCAN)
     .setScroll(new TimeValue(60000))
-    .setSize(10).execute().actionGet();
+    .setSize(300).execute().actionGet();
 
   do {
-    val bulkRequest = client.prepareBulk();
     for (hit <- scrollResp.getHits().getHits()) {
       val source = hit.getSource
       val id = source.get("id").asInstanceOf[Int]
@@ -50,37 +57,25 @@ object CreateIndex extends App {
       val location = source.get("location_type").asInstanceOf[Int]
       val human_name = source.get("human_name")
 
-      
-      val data = queryForLocations(location, id).toList map {
-        record =>
-          val fields = record.getSource 
-         val c =  Map((0 to 6).toList map { id => locationTypeMap(id) -> fields.get(locationTypeMap(id).toString) }:_*)
+      val bulkRequest = client.prepareBulk();
+
+      val totalHits = queryForLocations(location, id)
+      val data = totalHits map { hit =>
+        val source = hit.getSource
+        source.put("human_name", human_name)
+        bulkRequest.add(client.prepareIndex("geoindex", "geo")
+          .setSource(source))
 
       }
-      
+      println("searching for[" + id + "]" + "human_name[" + human_name + "]totalhits[" + totalHits.size + "]")
 
-//      queryForLocations(location, id) foreach { hit =>
-//        val source = hit.getSource
-//        source.put("human_name", human_name)
-//        bulkRequest.add(client.prepareIndex("geoindex", "geo")
-//          .setSource(source))
-//
-//      }
+      val bulkResponse = bulkRequest.execute().actionGet()
+      if (bulkResponse.hasFailures()) {
+        println("failed" + bulkResponse.buildFailureMessage())
 
-//      println("searching for[" + id + "]" + "human_name[" + human_name + "]")
-//
-//      val bulkResponse = bulkRequest.execute().actionGet()
-//      if (bulkResponse.hasFailures()) {
-//        println("failed" + bulkResponse.buildFailureMessage())
-//
-//      }
+      }
 
     }
     scrollResp = client.prepareSearchScroll(scrollResp.getScrollId()).setScroll(new TimeValue(600000)).execute().actionGet();
   } while (scrollResp.getHits().getHits().length != 0)
-
 }
-
-case class GeoMap(locationType: String, locationTypeId: Int, human_name: String,
-                  continents_id: Array[Int], countries_ids: Array[Int], metro_code_ids: Array[Int],
-                  region_ids: Array[Int], area_code_ids: Array[Int], city_ids: Array[Int])
