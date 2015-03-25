@@ -9,6 +9,8 @@ import org.elasticsearch.search.SearchHit
 import org.elasticsearch.index.query.QueryBuilders
 import org.elasticsearch.index.query.FilterBuilders
 import com.fasterxml.jackson.databind.ObjectMapper
+import scala.collection.immutable.HashMap
+import scala.collection.JavaConversions._
 
 object CreateIndex extends App {
   val mapper = new ObjectMapper()
@@ -44,6 +46,12 @@ object CreateIndex extends App {
     results
   }
 
+  def combineMap(map1: Map[String, Object], map2: Map[String, List[Object]]) = {
+    map1 map {
+      case (key, value) => if (map2.contains(key)) { key -> (List(value) ++ map2(key)) } else key -> List(value)
+    }
+  }
+
   var scrollResp = client.prepareSearch("human_locations")
     .setSearchType(SearchType.SCAN)
     .setScroll(new TimeValue(60000))
@@ -57,13 +65,21 @@ object CreateIndex extends App {
       val location = source.get("location_type").asInstanceOf[Int]
       val human_name = source.get("human_name")
 
+      val mmm = Map("locationType" -> (locationTypeMap(location)),
+        ("location_type_id" -> location), ("human_name" -> human_name))
+
       val bulkRequest = client.prepareBulk();
 
       val totalHits = queryForLocations(location, id)
+      val data1 = totalHits map (_.getSource)
+      val finalData = (data1.foldLeft(Map[String, List[Object]]()) { (a, b) => combineMap(b.toMap, a) })
       val data = totalHits map { hit =>
         val source = hit.getSource
-        source.put("human_name", human_name)
-        bulkRequest.add(client.prepareIndex("geoindex", "geo")
+        val mmm = HashMap("locationType" -> (locationTypeMap(location)),
+          ("location_type_id" -> location.asInstanceOf[Object]), ("human_name" -> human_name.asInstanceOf[Object]))
+
+        source.putAll(finalData)
+        bulkRequest.add(client.prepareIndex("geoindex2", "geo2")
           .setSource(source))
 
       }
