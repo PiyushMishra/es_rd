@@ -11,6 +11,6 @@ libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.1.
 
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.3.9"
 
-
+libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.2.10"
 
 
