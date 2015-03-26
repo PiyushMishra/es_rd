@@ -61,8 +61,7 @@ object CreateIndex extends App {
       val totalHits = queryForLocations(location, id)
       val data1 = totalHits map (_.getSource)
       val finalData = (data1.foldLeft(Map[String, List[Object]]()) { (a, b) => combineMap(b.toMap, a) }) map { case (key, value) => key -> value.distinct }
-      val data = totalHits map { hit =>
-        val source = hit.getSource
+      
 
         import org.json4s._
         import org.json4s.jackson.Serialization
@@ -81,7 +80,6 @@ object CreateIndex extends App {
         bulkRequest.add(client.prepareIndex("geoindex2", "geo2")
           .setSource(data))
 
-      }
       println("searching for[" + id + "]" + "human_name[" + human_name + "]totalhits[" + totalHits.size + "]")
 
       val bulkResponse = bulkRequest.execute().actionGet()
